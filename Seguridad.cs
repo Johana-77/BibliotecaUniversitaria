@@ -26,10 +26,8 @@ static class Seguridad
 
     public static byte[] Hash(string clave, byte[] sal)
     {
-        using (Rfc2898DeriveBytes kdf = new Rfc2898DeriveBytes(clave, sal, Iteraciones, HashAlgorithmName.SHA256))
-        {
-            return kdf.GetBytes(32);
-        }
+        // Metodo estatico recomendado en .NET 10 (mismo resultado que Rfc2898DeriveBytes)
+        return Rfc2898DeriveBytes.Pbkdf2(clave, sal, Iteraciones, HashAlgorithmName.SHA256, 32);
     }
 
     // Comparacion en tiempo constante (evita ataques por tiempo)

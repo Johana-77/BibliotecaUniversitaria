@@ -9,43 +9,41 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
-// ---------- MODELO: Libro ----------
-class Libro
+// ---------- MODELO: Libro (hereda de Material) ----------
+class Libro : Material
 {
-    private string id;
-    private string titulo;
-    private string autor;
-    private int anio;
-    private bool disponible = true;
+    public const string Codigo = "LIBRO";
 
     public Libro(string id, string titulo, string autor, int anio)
+        : base(id, titulo, autor, anio)
     {
-        this.id = Validador.IdLibro(id);
-        this.titulo = Validador.Texto(titulo, "titulo", 80);
-        this.autor = Validador.Texto(autor, "autor", 60);
-        this.anio = Validador.Anio(anio);
     }
 
-    public string Id { get { return id; } }
-    public string Titulo { get { return titulo; } }
-    public string Autor { get { return autor; } }
-    public int Anio { get { return anio; } }
-    public bool Disponible
+    public override string Tipo { get { return Codigo; } }
+    public override string NombreTipo { get { return "Libro"; } }
+    public override int DiasPrestamo { get { return 14; } }
+}
+
+// ---------- MODELO: LibroReferencia (hereda de Libro) ----------
+// Diccionarios, enciclopedias, atlas: no salen de la biblioteca.
+class LibroReferencia : Libro
+{
+    public const string CodigoReferencia = "REFERENCIA";
+
+    public LibroReferencia(string id, string titulo, string autor, int anio)
+        : base(id, titulo, autor, anio)
     {
-        get { return disponible; }
-        set { disponible = value; }
     }
 
-    public string ALinea()
-    {
-        return id + ";" + titulo + ";" + autor + ";" + anio;
-    }
+    public override string Tipo { get { return CodigoReferencia; } }
+    public override string NombreTipo { get { return "Referencia"; } }
+    public override int DiasPrestamo { get { return 0; } }
 
-    public static Libro DesdeLinea(string linea)
+    // Polimorfismo: cambia la regla heredada, este material nunca se presta
+    public override bool PermitePrestamo { get { return false; } }
+
+    public override string EstadoTexto(Prestamo prestamo)
     {
-        string[] p = linea.Split(';');
-        if (p.Length != 4)
-            throw new ValidacionException("Linea de libro con formato incorrecto");
-        return new Libro(p[0], p[1], p[2], Validador.AnioTexto(p[3]));
+        return Disponible ? "Solo consulta en sala" : base.EstadoTexto(prestamo);
     }
 }

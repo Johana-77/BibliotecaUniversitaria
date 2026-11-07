@@ -11,31 +11,35 @@ using System.Windows.Forms;
 
 // ---------- LOGICA PRINCIPAL ----------
 // Estructuras de datos elegidas:
-//   Dictionary<string, Libro>         -> busqueda por codigo en O(1)
-//   Dictionary<string, Prestamo>      -> prestamo activo de cada libro en O(1)
+//   Dictionary<string, Material>      -> busqueda por codigo en O(1) (guarda Libro, Revista o LibroReferencia)
+//   Dictionary<string, Prestamo>      -> prestamo activo de cada material en O(1)
 //   Dictionary<string, Queue<string>> -> cola de reservas (FIFO: el primero en reservar es el primero en recibir)
 //   Dictionary<string, int>           -> cantidad de prestamos por socio en O(1)
+//
+// Polimorfismo: esta clase solo conoce la clase base Material. Cuando llama a
+// ValidarPrestamo(), DiasPrestamo o ALinea() se ejecuta el codigo de la clase real.
 class Biblioteca
 {
-    private const int MaxPrestamosPorSocio = 3;
+    public const int MaxPrestamosPorSocio = 3;
+    public const string SocioLegado = "00000";
 
-    private Dictionary<string, Libro> libros = new Dictionary<string, Libro>(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, Material> libros = new Dictionary<string, Material>(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, Prestamo> prestamos = new Dictionary<string, Prestamo>(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, Queue<string>> reservas = new Dictionary<string, Queue<string>>(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, int> prestamosPorSocio = new Dictionary<string, int>();
 
     public int TotalLibros { get { return libros.Count; } }
 
-    public void AgregarLibro(Libro libro)
+    public void AgregarLibro(Material libro)
     {
         if (libros.ContainsKey(libro.Id))
             throw new ValidacionException("Ya existe un libro con el codigo " + libro.Id);
         libros.Add(libro.Id, libro);
     }
 
-    public Libro ObtenerLibro(string id)
+    public Material ObtenerLibro(string id)
     {
-        Libro libro;
+        Material libro;
         if (!libros.TryGetValue((id ?? "").Trim(), out libro))
             throw new ValidacionException("No existe el libro con codigo " + id);
         return libro;
@@ -48,51 +52,58 @@ class Biblioteca
         return p;
     }
 
-    public List<Libro> Buscar(string texto)
+    public List<Material> Buscar(string texto)
     {
         texto = (texto ?? "").Trim();
-        List<Libro> resultado = new List<Libro>();
-        foreach (Libro l in libros.Values)
+        List<Material> resultado = new List<Material>();
+        foreach (Material l in libros.Values)
         {
             if (texto.Length == 0
                 || l.Id.IndexOf(texto, StringComparison.OrdinalIgnoreCase) >= 0
                 || l.Titulo.IndexOf(texto, StringComparison.OrdinalIgnoreCase) >= 0
-                || l.Autor.IndexOf(texto, StringComparison.OrdinalIgnoreCase) >= 0)
+                || l.Autor.IndexOf(texto, StringComparison.OrdinalIgnoreCase) >= 0
+                || l.NombreTipo.IndexOf(texto, StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 resultado.Add(l);
             }
         }
-        resultado.Sort(delegate(Libro a, Libro b) { return string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase); });
+        resultado.Sort(delegate(Material a, Material b) { return string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase); });
         return resultado;
+    }
+
+    public int CantidadDe(string socio)
+    {
+        int n;
+        return prestamosPorSocio.TryGetValue(socio ?? "", out n) ? n : 0;
     }
 
     public void Prestar(string id, string socio)
     {
-        Libro libro = ObtenerLibro(id);
+        Material libro = ObtenerLibro(id);
         socio = Validador.Carnet(socio);
-        if (!libro.Disponible)
-            throw new ValidacionException("El libro ya esta prestado. Puedes reservarlo");
+        libro.ValidarPrestamo();   // polimorfico: un LibroReferencia lo rechaza
         if (CantidadDe(socio) >= MaxPrestamosPorSocio)
-            throw new ValidacionException("El socio ya tiene " + MaxPrestamosPorSocio + " libros prestados (maximo permitido)");
-        RegistrarPrestamo(new Prestamo(libro.Id, socio, DateTime.Now));
-        ManejadorErrores.Registrar("PRESTAMO", "Libro " + libro.Id + " prestado al carnet " + socio);
+            throw new ReglaNegocioException("El socio ya tiene " + MaxPrestamosPorSocio + " libros prestados (maximo permitido)");
+        RegistrarPrestamo(new Prestamo(libro.Id, socio, DateTime.Now, libro.DiasPrestamo));
+        ManejadorErrores.Registrar("PRESTAMO", libro.NombreTipo + " " + libro.Id + " prestado al carnet " + socio
+            + " por " + libro.DiasPrestamo + " dias");
     }
 
     // Devuelve un mensaje para mostrar en pantalla
     public string Devolver(string id)
     {
-        Libro libro = ObtenerLibro(id);
+        Material libro = ObtenerLibro(id);
         if (libro.Disponible)
-            throw new ValidacionException("Ese libro no esta prestado");
+            throw new ReglaNegocioException("Ese libro no esta prestado");
 
         QuitarPrestamo(libro.Id);
-        ManejadorErrores.Registrar("DEVOLUCION", "Libro " + libro.Id + " devuelto");
+        ManejadorErrores.Registrar("DEVOLUCION", libro.NombreTipo + " " + libro.Id + " devuelto");
 
         Queue<string> cola;
         if (reservas.TryGetValue(libro.Id, out cola) && cola.Count > 0)
         {
             string siguiente = cola.Dequeue();
-            RegistrarPrestamo(new Prestamo(libro.Id, siguiente, DateTime.Now));
+            RegistrarPrestamo(new Prestamo(libro.Id, siguiente, DateTime.Now, libro.DiasPrestamo));
             return "Devuelto. Se presto automaticamente al carnet " + siguiente + " (primero en la cola de reservas)";
         }
         return "Libro devuelto y disponible";
@@ -100,13 +111,15 @@ class Biblioteca
 
     public void Reservar(string id, string socio)
     {
-        Libro libro = ObtenerLibro(id);
+        Material libro = ObtenerLibro(id);
         socio = Validador.Carnet(socio);
+        if (!libro.PermitePrestamo)
+            throw new ReglaNegocioException("Ese material es solo de consulta en sala: no se presta ni se reserva");
         if (libro.Disponible)
-            throw new ValidacionException("El libro esta disponible: puedes prestarlo directamente");
+            throw new ReglaNegocioException("El libro esta disponible: puedes prestarlo directamente");
         Prestamo actual = PrestamoDe(libro.Id);
         if (actual != null && actual.Socio == socio)
-            throw new ValidacionException("Ese socio ya tiene este libro prestado");
+            throw new ReglaNegocioException("Ese socio ya tiene este libro prestado");
 
         Queue<string> cola;
         if (!reservas.TryGetValue(libro.Id, out cola))
@@ -115,7 +128,7 @@ class Biblioteca
             reservas.Add(libro.Id, cola);
         }
         if (cola.Contains(socio))
-            throw new ValidacionException("Ese socio ya reservo este libro");
+            throw new ReglaNegocioException("Ese socio ya reservo este libro");
         cola.Enqueue(socio);
         ManejadorErrores.Registrar("RESERVA", "Libro " + libro.Id + " reservado por el carnet " + socio);
     }
@@ -130,13 +143,8 @@ class Biblioteca
     // Usado por la migracion: el sistema viejo no guardaba quien tenia el libro
     public void MarcarPrestadoLegado(string id)
     {
-        RegistrarPrestamo(new Prestamo(id, "00000", DateTime.Now));
-    }
-
-    private int CantidadDe(string socio)
-    {
-        int n;
-        return prestamosPorSocio.TryGetValue(socio, out n) ? n : 0;
+        Material libro = ObtenerLibro(id);
+        RegistrarPrestamo(new Prestamo(libro.Id, SocioLegado, DateTime.Now, libro.DiasPrestamo));
     }
 
     private void RegistrarPrestamo(Prestamo p)
@@ -159,18 +167,16 @@ class Biblioteca
     // ----- Persistencia en archivos -----
     public void Guardar()
     {
-        List<string> l = new List<string>();
-        foreach (Libro x in libros.Values) l.Add(x.ALinea());
+        List<RegistroArchivo> l = new List<RegistroArchivo>(libros.Values);
         EscribirSeguro(Rutas.Libros, l);
 
-        List<string> p = new List<string>();
-        foreach (Prestamo x in prestamos.Values) p.Add(x.ALinea());
+        List<RegistroArchivo> p = new List<RegistroArchivo>(prestamos.Values);
         EscribirSeguro(Rutas.Prestamos, p);
 
-        List<string> r = new List<string>();
+        List<RegistroArchivo> r = new List<RegistroArchivo>();
         foreach (KeyValuePair<string, Queue<string>> par in reservas)
         {
-            foreach (string socio in par.Value) r.Add(par.Key + ";" + socio);
+            foreach (string socio in par.Value) r.Add(new Reserva(par.Key, socio));
         }
         EscribirSeguro(Rutas.Reservas, r);
     }
@@ -181,7 +187,8 @@ class Biblioteca
         {
             foreach (string linea in File.ReadAllLines(Rutas.Libros))
             {
-                try { AgregarLibro(Libro.DesdeLinea(linea)); }
+                // Material.DesdeLinea crea un Libro, Revista o LibroReferencia segun el tipo guardado
+                try { AgregarLibro(Material.DesdeLinea(linea)); }
                 catch (ValidacionException ex) { ManejadorErrores.Registrar("DATOS", "Libro descartado al cargar: " + ex.Message); }
             }
         }
@@ -191,8 +198,12 @@ class Biblioteca
             {
                 try
                 {
-                    Prestamo pr = Prestamo.DesdeLinea(linea);
-                    if (libros.ContainsKey(pr.IdLibro)) RegistrarPrestamo(pr);
+                    Prestamo pr = Prestamo.DesdeLinea(linea, delegate(string id)
+                    {
+                        Material m;
+                        return libros.TryGetValue(id, out m) ? m.DiasPrestamo : 0;
+                    });
+                    if (libros.ContainsKey(pr.IdLibro) && !prestamos.ContainsKey(pr.IdLibro)) RegistrarPrestamo(pr);
                 }
                 catch (ValidacionException ex) { ManejadorErrores.Registrar("DATOS", "Prestamo descartado al cargar: " + ex.Message); }
             }
@@ -203,23 +214,24 @@ class Biblioteca
             {
                 try
                 {
-                    string[] p = linea.Split(';');
-                    if (p.Length != 2) throw new ValidacionException("Linea de reserva con formato incorrecto");
-                    string id = Validador.IdLibro(p[0]);
-                    string socio = Validador.Carnet(p[1]);
-                    if (!libros.ContainsKey(id)) continue;
+                    Reserva rs = Reserva.DesdeLinea(linea);
+                    if (!libros.ContainsKey(rs.IdLibro)) continue;
                     Queue<string> cola;
-                    if (!reservas.TryGetValue(id, out cola)) { cola = new Queue<string>(); reservas.Add(id, cola); }
-                    cola.Enqueue(socio);
+                    if (!reservas.TryGetValue(rs.IdLibro, out cola)) { cola = new Queue<string>(); reservas.Add(rs.IdLibro, cola); }
+                    if (!cola.Contains(rs.Socio)) cola.Enqueue(rs.Socio);
                 }
                 catch (ValidacionException ex) { ManejadorErrores.Registrar("DATOS", "Reserva descartada al cargar: " + ex.Message); }
             }
         }
     }
 
-    // Escribe primero en un archivo temporal para no dejar archivos a medias si algo falla
-    private static void EscribirSeguro(string ruta, List<string> lineas)
+    // Escribe primero en un archivo temporal para no dejar archivos a medias si algo falla.
+    // Recibe la clase base: cada objeto (Material, Prestamo, Reserva) sabe escribirse con ALinea().
+    private static void EscribirSeguro(string ruta, List<RegistroArchivo> registros)
     {
+        List<string> lineas = new List<string>();
+        foreach (RegistroArchivo reg in registros) lineas.Add(reg.ALinea());
+
         string temporal = ruta + ".tmp";
         File.WriteAllLines(temporal, lineas, Encoding.UTF8);
         File.Copy(temporal, ruta, true);

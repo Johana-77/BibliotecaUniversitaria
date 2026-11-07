@@ -46,8 +46,10 @@ static class ManejadorErrores
         }
         catch (ValidacionException ex)
         {
-            Registrar("AVISO", ex.Message);
-            Notificador("Dato no valido", ex.Message);
+            // Atrapa ValidacionException y sus hijas (ReglaNegocioException).
+            // Titulo y nivel salen de la clase real de la excepcion (polimorfismo).
+            Registrar(ex.NivelBitacora, ex.Message);
+            Notificador(ex.TituloAviso, ex.Message);
         }
         catch (UnauthorizedAccessException ex)
         {

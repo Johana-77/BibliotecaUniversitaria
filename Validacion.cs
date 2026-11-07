@@ -9,10 +9,24 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
-// ---------- Excepcion propia para datos invalidos ----------
+// ---------- Excepciones propias (herencia: Exception -> ValidacionException -> ReglaNegocioException) ----------
+// Dato con formato incorrecto (codigo, carnet, anio, texto...)
 class ValidacionException : Exception
 {
     public ValidacionException(string mensaje) : base(mensaje) { }
+
+    // Polimorfismo: cada tipo de excepcion decide con que titulo se muestra y registra
+    public virtual string TituloAviso { get { return "Dato no valido"; } }
+    public virtual string NivelBitacora { get { return "AVISO"; } }
+}
+
+// El dato es correcto pero la operacion no esta permitida por las reglas de la biblioteca
+class ReglaNegocioException : ValidacionException
+{
+    public ReglaNegocioException(string mensaje) : base(mensaje) { }
+
+    public override string TituloAviso { get { return "Operacion no permitida"; } }
+    public override string NivelBitacora { get { return "REGLA"; } }
 }
 
 // ---------- MODULO DE VALIDACIONES (se usa en toda la aplicacion) ----------
