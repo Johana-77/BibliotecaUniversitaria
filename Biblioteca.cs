@@ -89,7 +89,10 @@ class Biblioteca
             + " por " + libro.DiasPrestamo + " dias");
     }
 
-    // Devuelve un mensaje para mostrar en pantalla
+    // Devuelve un mensaje para mostrar en pantalla.
+    // Si hay reservas, el material pasa al PRIMER socio de la cola que todavia
+    // no llego al limite de 3 prestamos. Los que estan en el limite se saltan,
+    // pero conservan su lugar en la cola para la proxima devolucion.
     public string Devolver(string id)
     {
         Material libro = ObtenerLibro(id);
@@ -100,13 +103,42 @@ class Biblioteca
         ManejadorErrores.Registrar("DEVOLUCION", libro.NombreTipo + " " + libro.Id + " devuelto");
 
         Queue<string> cola;
-        if (reservas.TryGetValue(libro.Id, out cola) && cola.Count > 0)
+        if (!reservas.TryGetValue(libro.Id, out cola) || cola.Count == 0)
+            return "Libro devuelto y disponible";
+
+        string elegido = null;
+        Queue<string> siguenEsperando = new Queue<string>();
+        while (cola.Count > 0)
         {
-            string siguiente = cola.Dequeue();
-            RegistrarPrestamo(new Prestamo(libro.Id, siguiente, DateTime.Now, libro.DiasPrestamo));
-            return "Devuelto. Se presto automaticamente al carnet " + siguiente + " (primero en la cola de reservas)";
+            string socio = cola.Dequeue();
+            if (elegido == null && CantidadDe(socio) < MaxPrestamosPorSocio)
+            {
+                elegido = socio;
+            }
+            else
+            {
+                if (elegido == null)
+                {
+                    ManejadorErrores.Registrar("RESERVA", "Carnet " + socio + " saltado en la cola de " + libro.Id
+                        + ": ya tiene " + MaxPrestamosPorSocio + " prestamos (conserva su lugar)");
+                }
+                siguenEsperando.Enqueue(socio);
+            }
         }
-        return "Libro devuelto y disponible";
+
+        if (siguenEsperando.Count > 0) reservas[libro.Id] = siguenEsperando;
+        else reservas.Remove(libro.Id);
+
+        if (elegido == null)
+        {
+            ManejadorErrores.Registrar("RESERVA", "Nadie en la cola de " + libro.Id + " puede recibirlo ahora; queda disponible");
+            return "Devuelto. Los socios de la cola ya tienen " + MaxPrestamosPorSocio + " prestamos: el libro queda disponible";
+        }
+
+        RegistrarPrestamo(new Prestamo(libro.Id, elegido, DateTime.Now, libro.DiasPrestamo));
+        ManejadorErrores.Registrar("PRESTAMO", libro.NombreTipo + " " + libro.Id + " prestado automaticamente al carnet "
+            + elegido + " por reserva (" + libro.DiasPrestamo + " dias)");
+        return "Devuelto. Se presto automaticamente al carnet " + elegido + " (primero habilitado en la cola de reservas)";
     }
 
     public void Reservar(string id, string socio)
