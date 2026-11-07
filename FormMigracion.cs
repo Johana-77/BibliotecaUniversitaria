@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 // ---------- PANTALLA 3: MIGRACION DEL SISTEMA LEGADO ----------
-class FormMigracion : Form
+class FormMigracion : FormBase
 {
     private Biblioteca bib;
     private TextBox txtRuta;
@@ -18,11 +18,9 @@ class FormMigracion : Form
     private Label lblResumen;
 
     public FormMigracion(Biblioteca bib)
+        : base("Migracion de datos del sistema legado", 620, 400, false)
     {
         this.bib = bib;
-        Text = "Migracion de datos del sistema legado";
-        ClientSize = new Size(620, 400);
-        StartPosition = FormStartPosition.CenterParent;
 
         UI.Etiqueta(this, "Archivo del sistema antiguo (.txt, formato ID|TITULO|AUTOR|ANIO|ESTADO):", 10, 12);
         txtRuta = UI.Caja(this, 10, 35, 480, 260);

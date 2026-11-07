@@ -10,23 +10,26 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 // ---------- PANTALLA 2: CATALOGO Y PRESTAMOS ----------
-class FormPrincipal : Form
+class FormPrincipal : FormBase
 {
     private Biblioteca bib;
     private string usuario;
     private DataGridView grid;
     private TextBox txtBuscar, txtId, txtTitulo, txtAutor, txtAnio, txtSocio;
+    private ComboBox cmbTipo;
     private Label lblEstado;
-    private ErrorProvider ep = new ErrorProvider();
 
     public FormPrincipal(Biblioteca bib, string usuario)
+        : base("Sesion de " + usuario, 890, 570, true)
     {
         this.bib = bib;
         this.usuario = usuario;
-        Text = "Biblioteca Universitaria - Sesion de " + this.usuario;
-        ClientSize = new Size(890, 570);
-        StartPosition = FormStartPosition.CenterScreen;
         ConstruirInterfaz();
+    }
+
+    // Polimorfismo: redefine el metodo virtual de FormBase
+    protected override void CargarDatos()
+    {
         Refrescar();
     }
 
@@ -46,6 +49,7 @@ class FormPrincipal : Form
         grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         grid.Columns.Add("id", "Codigo");
+        grid.Columns.Add("tipo", "Tipo");
         grid.Columns.Add("titulo", "Titulo");
         grid.Columns.Add("autor", "Autor");
         grid.Columns.Add("anio", "Anio");
@@ -59,14 +63,22 @@ class FormPrincipal : Form
         Controls.Add(gbNuevo);
         UI.Etiqueta(gbNuevo, "Codigo:", 10, 25);
         txtId = UI.Caja(gbNuevo, 10, 45, 80, 10);
-        UI.Etiqueta(gbNuevo, "Titulo:", 105, 25);
-        txtTitulo = UI.Caja(gbNuevo, 105, 45, 280, 80);
-        UI.Etiqueta(gbNuevo, "Autor:", 400, 25);
-        txtAutor = UI.Caja(gbNuevo, 400, 45, 220, 60);
-        UI.Etiqueta(gbNuevo, "Anio:", 635, 25);
-        txtAnio = UI.Caja(gbNuevo, 635, 45, 60, 4);
+        UI.Etiqueta(gbNuevo, "Tipo:", 100, 25);
+        cmbTipo = new ComboBox();
+        cmbTipo.Location = new Point(100, 45);
+        cmbTipo.Width = 130;
+        cmbTipo.DropDownStyle = ComboBoxStyle.DropDownList;
+        cmbTipo.Items.AddRange(Material.TiposDisponibles);
+        cmbTipo.SelectedIndex = 0;
+        gbNuevo.Controls.Add(cmbTipo);
+        UI.Etiqueta(gbNuevo, "Titulo:", 240, 25);
+        txtTitulo = UI.Caja(gbNuevo, 240, 45, 220, 80);
+        UI.Etiqueta(gbNuevo, "Autor:", 470, 25);
+        txtAutor = UI.Caja(gbNuevo, 470, 45, 170, 60);
+        UI.Etiqueta(gbNuevo, "Anio:", 650, 25);
+        txtAnio = UI.Caja(gbNuevo, 650, 45, 55, 4);
         UI.SoloDigitos(txtAnio);
-        UI.Boton(gbNuevo, "Agregar libro", 720, 42, 130, AlAgregar);
+        UI.Boton(gbNuevo, "Agregar", 720, 42, 130, AlAgregar);
 
         ValidarAlSalir(txtId, v => Validador.IdLibro(v));
         ValidarAlSalir(txtTitulo, v => Validador.Texto(v, "titulo", 80));
@@ -93,34 +105,14 @@ class FormPrincipal : Form
         lblEstado = UI.Etiqueta(this, "Listo", 10, 535);
     }
 
-    private void ValidarAlSalir(TextBox caja, Action<string> regla)
-    {
-        caja.Validating += delegate(object s, CancelEventArgs e)
-        {
-            try
-            {
-                regla(caja.Text);
-                ep.SetError(caja, "");
-            }
-            catch (ValidacionException ex)
-            {
-                ep.SetError(caja, ex.Message);
-            }
-        };
-    }
-
     private void Refrescar()
     {
         grid.Rows.Clear();
-        foreach (Libro l in bib.Buscar(txtBuscar.Text))
+        foreach (Material m in bib.Buscar(txtBuscar.Text))
         {
-            string estado = "Disponible";
-            if (!l.Disponible)
-            {
-                Prestamo p = bib.PrestamoDe(l.Id);
-                estado = "Prestado a " + (p != null ? p.Socio : "?");
-            }
-            grid.Rows.Add(l.Id, l.Titulo, l.Autor, l.Anio, estado);
+            // Polimorfismo: cada tipo de material arma su propio texto de estado
+            string estado = m.EstadoTexto(bib.PrestamoDe(m.Id));
+            grid.Rows.Add(m.Id, m.NombreTipo, m.Titulo, m.Autor, m.Anio, estado);
         }
         if (lblEstado != null) lblEstado.Text = bib.TotalLibros + " libros en el catalogo";
     }
@@ -136,12 +128,14 @@ class FormPrincipal : Form
     {
         ManejadorErrores.Ejecutar(delegate
         {
-            Libro libro = new Libro(txtId.Text, txtTitulo.Text, txtAutor.Text, Validador.AnioTexto(txtAnio.Text));
+            // La fabrica crea un Libro, Revista o LibroReferencia; aqui se usa como Material
+            string tipo = Material.CodigosTipos[Math.Max(0, cmbTipo.SelectedIndex)];
+            Material libro = Material.Crear(tipo, txtId.Text, txtTitulo.Text, txtAutor.Text, Validador.AnioTexto(txtAnio.Text));
             bib.AgregarLibro(libro);
             bib.Guardar();
             txtId.Clear(); txtTitulo.Clear(); txtAutor.Clear(); txtAnio.Clear();
             Refrescar();
-            lblEstado.Text = "Libro " + libro.Id + " agregado";
+            lblEstado.Text = libro.NombreTipo + " " + libro.Id + " agregado";
         });
     }
 

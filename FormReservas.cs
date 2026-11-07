@@ -10,20 +10,18 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 // ---------- PANTALLA 4: COLA DE RESERVAS ----------
-class FormReservas : Form
+class FormReservas : FormBase
 {
     private Biblioteca bib;
     private ComboBox cmbLibro;
     private ListBox lstCola;
     private TextBox txtSocio;
-    private List<Libro> prestados = new List<Libro>();
+    private List<Material> prestados = new List<Material>();
 
     public FormReservas(Biblioteca bib)
+        : base("Reservas de libros prestados", 500, 330, false)
     {
         this.bib = bib;
-        Text = "Reservas de libros prestados";
-        ClientSize = new Size(500, 330);
-        StartPosition = FormStartPosition.CenterParent;
 
         UI.Etiqueta(this, "Libro prestado:", 10, 12);
         cmbLibro = new ComboBox();
@@ -43,15 +41,14 @@ class FormReservas : Form
         txtSocio = UI.Caja(this, 10, 275, 140, 10);
         UI.SoloDigitos(txtSocio);
         UI.Boton(this, "Reservar", 170, 272, 110, AlReservar);
-
-        CargarLibros();
     }
 
-    private void CargarLibros()
+    // Polimorfismo: redefine el metodo virtual de FormBase
+    protected override void CargarDatos()
     {
         cmbLibro.Items.Clear();
         prestados.Clear();
-        foreach (Libro l in bib.Buscar(""))
+        foreach (Material l in bib.Buscar(""))
         {
             if (!l.Disponible)
             {

@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 // ---------- PANTALLA 1: LOGIN ----------
-class FormLogin : Form
+class FormLogin : FormBase
 {
     private GestorUsuarios usuarios;
     private bool modoCrear;
@@ -21,13 +21,11 @@ class FormLogin : Form
     public string UsuarioActual = "";
 
     public FormLogin(GestorUsuarios usuarios)
+        : base("Ingreso", 360, 250, true)
     {
         this.usuarios = usuarios;
         modoCrear = !usuarios.HayUsuarios();
 
-        Text = "Biblioteca Universitaria - Ingreso";
-        ClientSize = new Size(360, 250);
-        StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
 
